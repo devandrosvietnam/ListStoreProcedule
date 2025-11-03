@@ -5,16 +5,14 @@ SET ANSI_NULLS ON
 GO
 SET QUOTED_IDENTIFIER ON
 GO
-
-
-
+ 
+ 
 ALTER PROC [dbo].[ANDR_QA_GetPartInsRCVInfo]
 	@Company nvarchar(10)
 	--,@Site nvarchar(50)
 	,@PONum int
 	,@PackSlip nvarchar(50)
 	,@PackLine int
-	-- [dbo].[ANDR_QA_GetPartInsRCVInfo] 10, 4034, 'HP-0846-10102022',4
 As
 select	PT.TranType
 	,PT.PartNum
@@ -30,16 +28,12 @@ select	PT.TranType
 		,PT.Company
 INTO #tbParttran
 from Erp.PartTran PT with (nolock) 
-	--left join PartLot B with (nolock) on A.Company = B.COmpany and A.PartNum = B.PartNum and A.LotNum = B.LotNum 
-	--left join Part C with (nolock) on A.Company = C.COmpany and A.PartNum = C.PartNum 
-	--inner join Erp.Warehse D with(nolock) on A.Company = D.Company and A.WarehouseCode = D.WarehouseCode 
-	--	and D.Plant = @Site
 where PT.Company = @Company 
 	--and PT.Plant = @Site
 	AND PT.PONum = @PONum
 	AND PT.PackSlip = @PackSlip
 	AND PT.PackLine= @PackLine
-	 AND (TranType IN ('PUR-INS','INS-STK'))--,'INS-DMR','DMR-STK','DMR-REJ'))
+	 AND (TranType IN ('PUR-INS','INS-STK', 'PUR-STK'))
 group by PT.PartNum,PT.UM,PT.LotNum,PT.Company,PT.PONum,PT.PackSlip,PT.PackLine,PT.TranType
 UNION 
 select	PT.ActionType
@@ -56,17 +50,11 @@ select	PT.ActionType
 		,PT.Company
 from Erp.DMRActn PT with (nolock) 
 	INNER join ERP.DMRHead B with (nolock) on PT.Company = B.COmpany and PT.DMRNum=B.DMRNum
-	--left join Part C with (nolock) on A.Company = C.COmpany and A.PartNum = C.PartNum 
-	--inner join Erp.Warehse D with(nolock) on A.Company = D.Company and A.WarehouseCode = D.WarehouseCode 
-	--	and D.Plant = @Site
 where PT.Company = @Company 
-	--and PT.Plant = @Site
-	--AND PT.PONum = @PONum
 	AND PT.PackSlip = @PackSlip
 	AND PT.PackLine= @PackLine
-	-- AND (TranType IN ('PUR-INS','INS-STK'))--,'INS-DMR','DMR-STK','DMR-REJ'))
 group by B.PartNum,PT.CreditUM,B.LotNum,PT.Company,B.PONum,PT.PackSlip,PT.PackLine,PT.ActionType
-
+ 
 select 
 	PartNum
 	,sum(ReceivedQTy)-sum(RejectQTy) TotalAccQTy
@@ -87,6 +75,5 @@ group by PartNum,UM
 	,PackSlip
 	,PackLine
 		,Company
-
+ 
 drop table #tbParttran
-  			  
