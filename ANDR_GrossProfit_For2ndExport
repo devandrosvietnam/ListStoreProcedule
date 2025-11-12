@@ -1,0 +1,364 @@
+USE [HPDBPROD]
+GO
+/****** Object:  StoredProcedure [dbo].[ANDR_GrossProfit_For2ndExport]    Script Date: 11/12/2025 2:16:37 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER OFF
+GO
+
+ALTER PROCEDURE [dbo].[ANDR_GrossProfit_For2ndExport]
+	@Company nvarchar(10) 
+	
+	,@FromDate		Date
+	,@ToDate		Date 
+	,@Account		nvarchar(MAX) 
+	
+--  exec ANDR_GrossProfit_For2ndExport 10,'06/01/2022','06/30/2022',''
+as
+BEGIN 	
+
+
+	
+	Select 
+	[InvcHead].[Company] as [Company],
+	[InvcHead].[GroupID] as [GroupID],
+	[InvcHead].[OpenInvoice] as [OpenInvoice],
+	[InvcHead].[Posted] as [Posted],
+	[InvcHead].[CreditMemo] as [CreditMemo],
+	[Customer].[CustID] as [CustID],
+	[Customer].[Name] as [Name],
+	[InvcHead].[InvoiceNum] as [InvoiceNum],
+	[InvcDtl].[InvoiceLine] as [InvoiceLine],
+	[InvcHead].[LegalNumber] as [LegalNumber],
+	[InvcHead].[InvoiceType] as [InvoiceType],
+	[InvcHead].[ApplyDate] as [ApplyDate],
+	[InvcHead].[InvoiceDate] as [InvoiceDate],
+	[InvcHead].[DueDate] as [DueDate],
+	case when [TranGLC].[SegValue1] is null and [InvcDtl].ProdCode = 'FOC-WITH' then '5111' 
+	  when  [TranGLC].[SegValue1] is null and [InvcDtl].ProdCode = 'FOC-WIOU'then '6412'
+	  else [TranGLC].[SegValue1] end as Account,
+	[InvcDtl].[PartNum] as [PartNum],
+	[InvcDtl].[LineDesc] as [LineDesc],
+	[InvcDtl].[SalesUM] as [SalesUM],
+	[InvcDtl].[SellingShipQty] as [SellingShipQty],
+	[InvcDtl].[SellingOrderQty] as [SellingOrderQty],
+	Case When [InvcDtl].[SellingShipQty] >0 Then [InvcDtl].OurShipQty * isnull(Part.NetWeight,0) 
+		When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 Then -[InvcDtl].OurShipQty * isnull(Part.NetWeight,0) 
+	     else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeight],
+	[Part].NetWeightUOM AS [NetWeightUOM],
+	Case When [InvcDtl].[SellingShipQty] >0 Then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
+	    when [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0  then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],(-[InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
+		 else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeightKG],
+	[InvcHead].[CurrencyCode] as [CurrencyCode],
+	[InvcHead].[ExchangeRate] as [ExchangeRate],
+	[InvcDtl].[DocUnitPrice] as [DocUnitPrice],
+	OD.ExworkUnitPrice_c ExworkUnitPrice,
+	[InvcDtl].[DocExtPrice] as [DocExtPrice],
+	(OD.ExworkUnitPrice_c  * InvcDtl.SellingShipQty) DocExwortAmout,
+	[InvcDtl].[DocDiscount] as [DocDiscount],
+	[InvcDtl].[ExtPrice] as [ExtPrice],
+	(OD.ExworkUnitPrice_c *[InvcHead].[ExchangeRate] * InvcDtl.SellingShipQty) ExwortAmout,
+	[InvcDtl].[Discount] as [Discount],
+	(ISNULL(InvcDtl.ExtPrice,0) - ISNULL(InvcDtl.Discount,0)) as [Revenue],
+	iif(OD.ExworkUnitPrice_c=0 or OD.ExworkUnitPrice_c=InvcDtl.DocUnitPrice,0,(ISNULL(InvcDtl.ExtPrice,0) - ISNULL(InvcDtl.Discount,0))-((OD.ExworkUnitPrice_c *[InvcHead].[ExchangeRate] * InvcDtl.SellingShipQty)))  MischargeAmout,
+	--Case When [InvcDtl].[SellingShipQty] > 0  Then (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
+	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost <> 0 Then -(InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
+	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost = 0  Then -(Select Sum(PartTran.ExtCost) From PartTran With(nolock) Where PartTran.Company = InvcDtl.Company And PartTran.RMANum = InvcDtl.RMANum And PartTran.RMALine = InvcDtl.RMALine And PartTran.PartNum = InvcDtl.PartNum)  
+	--                                         Else (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0))) END as [COGS]
+	--, Case When [InvcDtl].[SellingShipQty] > 0  Then (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
+	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost <> 0 Then -(InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
+	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost = 0  Then -(Select Sum(PartTran.ExtCost) From PartTran With(nolock) Where PartTran.Company = InvcDtl.Company And PartTran.RMANum = InvcDtl.RMANum And PartTran.RMALine = InvcDtl.RMALine And PartTran.PartNum = InvcDtl.PartNum)  
+	--                                         Else (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0))) END as [STDDirectCost]
+	[InvcHead].InvoiceComment AS [InvoiceComment]
+	, [Part].Sub1_c Sub1
+	, [Part].Sub2_c Sub2
+	, [Part].Sub3_c Sub3
+	, [Part].Sub4_c Sub4
+	, SR.[Name] Salesman
+	, InvcDtl.OrderNum
+	--, InvcDtl.OurShipQty
+into #tbGrossProfit
+from Erp.InvcDtl as InvcDtl with (nolock)
+inner join Erp.InvcHead as InvcHead with (nolock) on 
+	InvcDtl.Company = InvcHead.Company
+	and InvcDtl.InvoiceNum = InvcHead.InvoiceNum
+	and  InvcHead.InvoiceSuffix <> 'UR'  and InvcHead.StartUp = 0 -- and InvcHead.ApplyDate >= @FromDate  and InvcHead.ApplyDate <= @ToDate  )
+inner join Erp.Customer as Customer with (nolock) on 
+	InvcHead.Company = Customer.Company
+	and InvcHead.CustNum = Customer.CustNum
+left join erp.SalesRep SR with (nolock) on SR.Company=Customer.Company AND SR.SalesRepCode=Customer.SalesRepCode
+left join OrderDtl OD with (nolock) on InvcDtl.Company=OD.Company and InvcDtl.OrderNum=OD.OrderNum and InvcDtl.OrderLine=OD.OrderLine
+Left join Erp.TranGLC as TranGLC with (nolock) on 
+	InvcDtl.Company = TranGLC.Company
+	and InvcDtl.InvoiceLine = TranGLC.Key2
+	and InvcDtl.InvoiceNum = TranGLC.Key1
+	and TranGLC.RelatedToFile = 'InvcDtl'  and TranGLC.RecordType = 'R'  
+	and TranGLC.SegValue1 NOT IN ('42111', '515', '635', '999')  
+	and TranGLC.GLAcctContext in ('Returns', 'Sales', 'Sales/Returns','Discount')  
+Left Join Part AS Part With(nolock) ON InvcDtl.Company = Part.Company
+	and InvcDtl.PartNum = Part.PartNum
+--left join Erp.PartCost AS PartCost With(nolock) ON InvcDtl.Company = PartCost.Company
+--	and InvcDtl.PartNum = PartCost.PartNum
+where InvcHead.ApplyDate between @FromDate and @ToDate
+	and (@Account = '' or ([SegValue1] IN (select strCode from dbo.Split_To_Table( @Account,','))))
+		and InvcHead.Company=@Company  and not ((InvcHead.InvoiceType='MIS' and InvcHead.TranDocTypeID not in ('DOC025', 'DOC052') and InvcHead.RefCancelled <> 0) )
+		and not ((InvcHead.InvoiceType='SHP' and InvcHead.TranDocTypeID='DOC027') or (InvcHead.InvoiceType='MIS' and InvcDtl.RMANum<>0 and InvcHead.InvoiceAmt=0))
+		and SR.Name='MICKAEL SOUNE-SEYNE'
+UNION ALL
+	Select 
+	[InvcHead].[Company] as [Company],
+	[InvcHead].[GroupID] as [GroupID],
+	[InvcHead].[OpenInvoice] as [OpenInvoice],
+	[InvcHead].[Posted] as [Posted],
+	[InvcHead].[CreditMemo] as [CreditMemo],
+	[Customer].[CustID] as [CustID],
+	[Customer].[Name] as [Name],
+	[InvcHead].[InvoiceNum] as [InvoiceNum],
+	[InvcMisc].[InvoiceLine] as [InvoiceLine],
+	[InvcHead].[LegalNumber] as [LegalNumber],
+	[InvcHead].[InvoiceType] as [InvoiceType],
+	[InvcHead].[ApplyDate] as [ApplyDate],
+	[InvcHead].[InvoiceDate] as [InvoiceDate],
+	[InvcHead].[DueDate] as [DueDate],
+	[TranGLC].[SegValue1] as [SegValue1],
+	[InvcMisc].MiscCode as [PartNum],
+	[InvcMisc].[Description] as [LineDesc],
+	'' as [SalesUM],
+	0 as [SellingShipQty],
+	0 as [SellingOrderQty],
+	0 as [ShippedQtyByNetWeight],
+	'' as [NetWeightUOM],
+	0 as [ShippedQtyByNetWeightKG],
+	[InvcHead].[CurrencyCode] as [CurrencyCode],
+	[InvcHead].[ExchangeRate] as [ExchangeRate],
+	InvcMisc.DocMiscAmt as [DocUnitPrice],
+	0,
+	InvcMisc.DocMiscAmt as [DocExtPrice],
+	0,
+	0 as [DocDiscount],
+	InvcMisc.MiscAmt as [ExtPrice],
+	0,
+	0 as [Discount],
+	InvcMisc.MiscAmt as [Revenue],
+	0,
+	--0 as [COGS]
+	--, 0 as [STDDirectCost]
+	[InvcHead].InvoiceComment AS [InvoiceComment]
+	, '' as Sub1
+	, '' as Sub2
+	, '' as Sub3
+	, '' as Sub4
+	, SR.[Name]
+	, InvcHead.OrderNum
+	--,0
+from Erp.InvcMisc as InvcMisc with (nolock)
+inner join Erp.InvcHead  as InvcHead with (nolock) on 
+	InvcMisc.Company = InvcHead.Company
+	and InvcMisc.InvoiceNum = InvcHead.InvoiceNum
+	and  InvcHead.InvoiceSuffix <> 'UR'  
+	and InvcHead.StartUp = 0 -- and InvcHead.ApplyDate >= @FromDate  and InvcHead.ApplyDate <= @ToDate  )
+inner join Erp.Customer as Customer with (nolock) on 
+	InvcHead.Company = Customer.Company
+	and InvcHead.CustNum = Customer.CustNum
+inner join erp.SalesRep SR with (nolock) on SR.Company=Customer.Company AND SR.SalesRepCode=Customer.SalesRepCode
+inner join Erp.TranGLC as TranGLC with (nolock) on 
+	InvcMisc.Company = TranGLC.Company
+	and Convert(nvarchar(10),InvcMisc.SeqNum) = TranGLC.Key3
+	and InvcMisc.InvoiceNum = TranGLC.Key1
+	and TranGLC.RelatedToFile = 'InvcMisc'  and TranGLC.RecordType = 'R'  
+	and TranGLC.SegValue1 NOT IN ('42111', '515', '635', '999')  
+	and TranGLC.GLAcctContext in ('Misc Charge')  
+where InvcHead.ApplyDate between @FromDate and @ToDate
+		and (@Account = '' or ([SegValue1] IN (select strCode from dbo.Split_To_Table( @Account,','))))
+		and InvcHead.Company=@Company
+	     and SR.Name='MICKAEL SOUNE-SEYNE'
+
+
+--update #tbGrossProfit
+--set STDDirectCost-= (StdMtlBurCost*A.ShippedQtyByNetWeightKG)
+--FROM ( select GP.Company,PP.Plant,GP.PartNum, FEE.StdMtlBurCost, GP.ShippedQtyByNetWeightKG
+--			From  #tbGrossProfit GP inner join
+--					PartPlant PP ON GP.Company=PP.Company AND GP.PartNum=PP.PartNum and PP.PrimMfgSite_c=1
+--					INNER JOIN (select A.Company, B.Plant, SUM(A.StdBurdenCost) StdMtlBurCost
+--									From erp.PartCost A inner join PartPlant B on A.Company=B.Company AND A.PartNum=B.PartNum
+--									where A.PartNum like 'FEE%' and B.PrimMfgSite_c=1
+--									GROUP BY A.Company, B.Plant) FEE 
+--									ON FEE.Company=PP.Company AND FEE.Plant=PP.Plant ) A
+--where  A.Company=#tbGrossProfit.Company AND #tbGrossProfit.PartNum = A.PartNum 
+--		and A.ShippedQtyByNetWeightKG=#tbGrossProfit.ShippedQtyByNetWeightKG
+
+update #tbGrossProfit
+set Salesman = A.[Name]
+FROM
+(	select GP.Company,GP.OrderNum,SR.[Name]
+		from #tbGrossProfit GP INNER JOIN 
+			erp.OrderHed OH with(nolock) ON GP.Company=OH.Company AND GP.OrderNum=OH.OrderNum
+			inner join erp.SalesRep SR with (nolock) on SR.Company=OH.Company AND SR.SalesRepCode=OH.SalesRepList
+			
+	) A
+where #tbGrossProfit.OrderNum <> 0 AND #tbGrossProfit.Company=A.Company AND #tbGrossProfit.OrderNum=A.OrderNum
+
+
+		Select GP1.[Company],
+		GP1.[GroupID],
+		GP1.[OpenInvoice],
+		GP1.[Posted],
+		GP1.[CreditMemo],
+		GP1.[CustID],
+		GP1.[Name],
+		GP1.[InvoiceNum],
+		GP1.[InvoiceLine],
+		GP1.[LegalNumber],
+		GP1.[InvoiceType],
+		GP1.[ApplyDate],
+		GP1.[InvoiceDate],
+		GP1.[DueDate],
+		AccountNo = STUFF ((SELECT ',' +  Account From (select distinct * from #tbGrossProfit )GP2 
+				Where --GP2.[GroupID]=GP1.[GroupID] AND
+					--		GP2.[OpenInvoice]=GP1.[OpenInvoice] AND
+					--		GP2.[Posted]=GP1.[Posted] AND
+					--		GP2.[CreditMemo]=GP1.[CreditMemo] AND
+					--		GP2.[CustID]=GP1.[CustID] AND
+					--		GP2.[Name]=GP1.[Name] AND
+							GP2.[InvoiceNum]=GP1.[InvoiceNum] AND
+							GP2.[InvoiceLine]=GP1.[InvoiceLine] AND
+							--GP2.[LegalNumber]=GP1.[LegalNumber] AND
+							--GP2.[InvoiceType]=GP1.[InvoiceType] AND
+							--GP2.[ApplyDate]=GP1.[ApplyDate] AND
+							--GP2.[InvoiceDate]=GP1.[InvoiceDate] AND
+							--GP2.[DueDate]=GP1.[DueDate] AND
+							GP2.[PartNum]=GP1.[PartNum] AND
+							GP2.[LineDesc]=GP1.[LineDesc] --AND
+							--GP2.[SalesUM]=GP1.[SalesUM] AND
+							--GP2.[SellingShipQty]=GP1.[SellingShipQty] AND
+							--GP2.[SellingOrderQty]=GP1.[SellingOrderQty] AND
+							--GP2.[ShippedQtyByNetWeight]=GP1.[ShippedQtyByNetWeight] AND
+							--GP2.[NetWeightUOM]=GP1.[NetWeightUOM] AND
+							--GP2.[ShippedQtyByNetWeightKG]=GP1.[ShippedQtyByNetWeightKG] AND
+							--GP2.[CurrencyCode]=GP1.[CurrencyCode] AND
+							--GP2.[ExchangeRate]=GP1.[ExchangeRate] AND
+							--GP2.[DocUnitPrice]=GP1.[DocUnitPrice] AND
+							--GP2.[ExworkUnitPrice]=GP1.ExworkUnitPrice AND
+							--GP2.[DocExtPrice]=GP1.[DocExtPrice] AND
+							--GP2.[DocExwortAmout]=GP1.DocExwortAmout AND
+							--GP2.[DocDiscount]=GP1.[DocDiscount] AND
+							--GP2.[ExtPrice]=GP1.[ExtPrice] AND
+							--GP2.[ExwortAmout]=GP1.ExwortAmout AND
+							--GP2.[Discount]=GP1.[Discount] AND
+							--GP2.[Revenue]=GP1.[Revenue] AND
+							--GP2.[MischargeAmout]=GP1.MischargeAmout AND
+							--GP2.[COGS]=GP1.[COGS] AND
+							--GP2.[STDDirectCost]=GP1.[STDDirectCost] AND
+							--GP2.[InvoiceComment]=GP1.[InvoiceComment] AND
+							--GP2.[Sub1]=GP1.Sub1 AND
+							--GP2.[Sub2]=GP1.Sub2 AND
+							--GP2.[Sub3]=GP1.Sub3 AND
+							--GP2.[Sub4]=GP1.Sub4 AND
+							--GP2.[Salesman]=GP1.Salesman AND
+							--GP2.[OrderNum]=GP1.OrderNum 
+							 FOR XML PATH ('')), 1, 1, ''),
+		GP1.[PartNum],
+		GP1.[LineDesc],
+		GP1.[SalesUM],
+		GP1.[SellingShipQty],
+		GP1.[SellingOrderQty],
+		GP1.[ShippedQtyByNetWeight],
+		GP1.[NetWeightUOM],
+		GP1.[ShippedQtyByNetWeightKG],
+		GP1.[CurrencyCode],
+		GP1.[ExchangeRate],
+		GP1.[DocUnitPrice],
+		GP1.ExworkUnitPrice,
+		GP1.[DocExtPrice],
+		GP1.DocExwortAmout,
+		GP1.[DocDiscount],
+		GP1.[ExtPrice],
+		GP1.ExwortAmout,
+		GP1.[Discount],
+		GP1.[Revenue],
+		GP1.MischargeAmout,
+		--GP1.[COGS],
+		--GP1.[STDDirectCost],
+		GP1.[InvoiceComment],
+		GP1.Sub1,
+		GP1.Sub2,
+		GP1.Sub3,
+		GP1.Sub4,
+		GP1.Salesman,
+		GP1.OrderNum
+		from (select distinct * from #tbGrossProfit ) GP1
+group by GP1.[GroupID], GP1.Company,
+GP1.[OpenInvoice],
+GP1.[Posted],
+GP1.[CreditMemo],
+GP1.[CustID],
+GP1.[Name],
+GP1.[InvoiceNum],
+GP1.[InvoiceLine],
+GP1.[LegalNumber],
+GP1.[InvoiceType],
+GP1.[ApplyDate],
+GP1.[InvoiceDate],
+GP1.[DueDate],
+GP1.[PartNum],
+GP1.[LineDesc],
+GP1.[SalesUM],
+GP1.[SellingShipQty],
+GP1.[SellingOrderQty],
+GP1.[ShippedQtyByNetWeight],
+GP1.[NetWeightUOM],
+GP1.[ShippedQtyByNetWeightKG],
+GP1.[CurrencyCode],
+GP1.[ExchangeRate],
+GP1.[DocUnitPrice],
+GP1.ExworkUnitPrice,
+GP1.[DocExtPrice],
+GP1.DocExwortAmout,
+GP1.[DocDiscount],
+GP1.[ExtPrice],
+GP1.ExwortAmout,
+GP1.[Discount],
+GP1.[Revenue],
+GP1.MischargeAmout,
+--GP1.[COGS],
+--GP1.[STDDirectCost],
+GP1.[InvoiceComment],
+GP1.Sub1,
+GP1.Sub2,
+GP1.Sub3,
+GP1.Sub4,
+GP1.Salesman,
+GP1.OrderNum
+
+
+--select distinct *
+--From #tbGrossProfit
+
+
+drop table #tbGrossProfit
+END
+--Case When [InvcDtl].[DocUnitPrice] <> 0  Then [TranGLC].[SegValue1] 
+	--     When [InvcDtl].[DocUnitPrice] = 0 And InvcDtl.SellingShipQty >0 Then (Select GLCntrlAcct.SegValue1 
+	--		   From Part With(nolock),ERP.EntityGLC With(nolock),ERP.GLCntrlAcct With(nolock)
+	--		   Where InvcDtl.PartNum  =Part.PartNum
+	--		     And Part.Company = EntityGLC.Company
+	--			 And Part.ProdCode = EntityGLC.Key1
+	--			 And EntityGLC.Company = GLCntrlAcct.Company
+	--			 And EntityGLC.GLControlCode = GLCntrlAcct.GLControlCode
+	--			 And EntityGLC.GLControlType = GLCntrlAcct.GLControlType
+	--			 And EntityGLC.RelatedToFile = 'ProdGrup'
+	--			 And GLCntrlAcct.BookID = 'BOOK01' And GLAcctContext = 'Sales') 
+	--	 When [InvcDtl].[DocUnitPrice] = 0 And InvcDtl.SellingShipQty <0 Then  (Select GLCntrlAcct.SegValue1 
+	--		   From Part With(nolock),ERP.EntityGLC With(nolock),ERP.GLCntrlAcct With(nolock)
+	--		   Where InvcDtl.PartNum  =Part.PartNum
+	--		     And Part.Company = EntityGLC.Company
+	--			 And Part.ProdCode = EntityGLC.Key1
+	--			 And EntityGLC.Company = GLCntrlAcct.Company
+	--			 And EntityGLC.GLControlCode = GLCntrlAcct.GLControlCode
+	--			 And EntityGLC.GLControlType = GLCntrlAcct.GLControlType
+	--			 And EntityGLC.RelatedToFile = 'ProdGrup'
+	--			 And GLCntrlAcct.BookID = 'BOOK01' And GLAcctContext = 'Returns') 
+	--	   END as [SegValue1],
+
+
+
