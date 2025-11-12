@@ -42,13 +42,13 @@ BEGIN
 	[InvcDtl].[SalesUM] as [SalesUM],
 	[InvcDtl].[SellingShipQty] as [SellingShipQty],
 	[InvcDtl].[SellingOrderQty] as [SellingOrderQty],
-	Case When [InvcDtl].[SellingShipQty] >0 Then [InvcDtl].OurShipQty * isnull(Part.NetWeight,0) 
-		When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 Then -[InvcDtl].OurShipQty * isnull(Part.NetWeight,0) 
-	     else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeight],
+	Case When [InvcDtl].[SellingShipQty] >0 Then [InvcDtl].OurOrderQty * isnull(Part.NetWeight,0) 
+		When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 Then -[InvcDtl].OurOrderQty * isnull(Part.NetWeight,0) 
+	     else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeight],
 	[Part].NetWeightUOM AS [NetWeightUOM],
-	Case When [InvcDtl].[SellingShipQty] >0 Then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
-	    when [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0  then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],(-[InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
-		 else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurShipQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeightKG],
+	Case When [InvcDtl].[SellingShipQty] >0 Then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
+	    when [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0  then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],(-[InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
+		 else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeightKG],
 	[InvcHead].[CurrencyCode] as [CurrencyCode],
 	[InvcHead].[ExchangeRate] as [ExchangeRate],
 	[InvcDtl].[DocUnitPrice] as [DocUnitPrice],
