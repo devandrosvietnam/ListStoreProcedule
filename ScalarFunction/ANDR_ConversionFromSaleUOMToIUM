@@ -1,0 +1,64 @@
+USE [HPDBPROD]
+GO
+/****** Object:  UserDefinedFunction [dbo].[ANDR_ConversionFromSaleUOMToIUM]    Script Date: 11/14/2025 2:42:54 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+-- =============================================
+-- Author:		<Author,,Name>
+-- Create date: <Create Date, ,>
+-- Description:	<Description, ,>
+-- =============================================
+ALTER FUNCTION [dbo].[ANDR_ConversionFromSaleUOMToIUM]
+(
+    @Company NVARCHAR(10),
+    @PartNum NVARCHAR(50),
+    @Qty DECIMAL(18,5),
+    @FromUOM NVARCHAR(50),  -- SaleUOM
+    @ToUOM NVARCHAR(50)     -- IUM
+)
+RETURNS DECIMAL(18,5)
+AS
+BEGIN
+    DECLARE @ConvFactorFrom DECIMAL(16,6), @ConvOperatorFrom NVARCHAR(1)
+    DECLARE @ConvFactorTo DECIMAL(16,6), @ConvOperatorTo NVARCHAR(1)
+    DECLARE @Result DECIMAL(18,5)
+
+	IF (@FromUOM = @ToUOM)
+        RETURN @Qty
+
+    -- Lấy Conversion cho đơn vị gốc (SaleUOM)
+    SELECT TOP 1 
+        @ConvFactorFrom = ConvFactor,
+        @ConvOperatorFrom = ConvOperator
+    FROM Erp.PartUOM WITH (NOLOCK)
+    WHERE Company = @Company AND PartNum = @PartNum AND UOMCode = @FromUOM
+
+    -- Lấy Conversion cho đơn vị đích (IUM)
+    SELECT TOP 1 
+        @ConvFactorTo = ConvFactor,
+        @ConvOperatorTo = ConvOperator
+    FROM Erp.PartUOM WITH (NOLOCK)
+    WHERE Company = @Company AND PartNum = @PartNum AND UOMCode = @ToUOM
+
+    -- Áp dụng công thức quy đổi (giống logic trong ANDR_ConversionFromNW)
+    IF (@ConvOperatorFrom = '*')
+    BEGIN
+        IF (@ConvOperatorTo = '/')
+            SET @Result = @Qty * @ConvFactorFrom * @ConvFactorTo
+        ELSE
+            SET @Result = @Qty * (@ConvFactorFrom / NULLIF(@ConvFactorTo,0))
+    END
+    ELSE IF (@ConvOperatorFrom = '/')
+    BEGIN
+        IF (@ConvOperatorTo = '/')
+            SET @Result = @Qty * (@ConvFactorFrom / NULLIF(@ConvFactorTo,0))
+        ELSE
+            SET @Result = @Qty * @ConvFactorFrom * @ConvFactorTo
+    END
+
+    IF @Result IS NULL SET @Result = 0
+    RETURN @Result
+END

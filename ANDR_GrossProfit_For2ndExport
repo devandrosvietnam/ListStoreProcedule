@@ -42,13 +42,100 @@ BEGIN
 	[InvcDtl].[SalesUM] as [SalesUM],
 	[InvcDtl].[SellingShipQty] as [SellingShipQty],
 	[InvcDtl].[SellingOrderQty] as [SellingOrderQty],
-	Case When [InvcDtl].[SellingShipQty] >0 Then [InvcDtl].OurOrderQty * isnull(Part.NetWeight,0) 
-		When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 Then -[InvcDtl].OurOrderQty * isnull(Part.NetWeight,0) 
-	     else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeight],
+	CASE 
+		WHEN InvcDtl.SellingShipQty > 0 THEN 
+			dbo.ANDR_ConversionFromSaleUOMToIUM(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				InvcDtl.SellingShipQty,
+				InvcDtl.SalesUM,
+				Part.IUM
+			) * ISNULL(Part.NetWeight,0)
+    
+		 WHEN InvcDtl.SellingShipQty < 0 
+			 AND InvcDtl.RMANum <> 0 THEN 
+			- dbo.ANDR_ConversionFromSaleUOMToIUM(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				ABS(InvcDtl.SellingShipQty), 
+				InvcDtl.SalesUM,
+				Part.IUM
+			) * ISNULL(Part.NetWeight,0)
+
+		 ELSE
+			dbo.ANDR_ConversionFromNW(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				(
+					dbo.ANDR_ConversionFromSaleUOMToIUM(
+						InvcHead.Company,
+						InvcDtl.PartNum,
+						InvcDtl.SellingShipQty,
+						InvcDtl.SalesUM,
+						Part.IUM
+					) * ISNULL(Part.NetWeight,0)
+				),
+				Part.NetWeightUOM,
+				'KG'
+			)
+	END AS [ShippedQtyByNetWeight],
+
 	[Part].NetWeightUOM AS [NetWeightUOM],
-	Case When [InvcDtl].[SellingShipQty] >0 Then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
-	    when [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0  then (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],(-[InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG'))
-		 else (dbo.ANDR_ConversionFromNW([InvcHead].[Company],[InvcDtl].[PartNum],([InvcDtl].OurOrderQty*isnull(Part.NetWeight,0) ),[NetWeightUOM],'KG')) end as [ShippedQtyByNetWeightKG],
+	CASE 
+		-- 1. Shipping qty dương
+		WHEN InvcDtl.SellingShipQty > 0 THEN 
+			dbo.ANDR_ConversionFromNW(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				(
+					dbo.ANDR_ConversionFromSaleUOMToIUM(
+						InvcHead.Company,
+						InvcDtl.PartNum,
+						InvcDtl.SellingShipQty,
+						InvcDtl.SalesUM,
+						Part.IUM
+					) * ISNULL(Part.NetWeight, 0)
+				),
+				Part.NetWeightUOM,
+				'KG'
+			)
+
+		-- 2. Shipping qty âm (RMA)
+		WHEN InvcDtl.SellingShipQty < 0 AND InvcDtl.RMANum <> 0 THEN 
+			dbo.ANDR_ConversionFromNW(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				(
+					- dbo.ANDR_ConversionFromSaleUOMToIUM(
+						InvcHead.Company,
+						InvcDtl.PartNum,
+						ABS(InvcDtl.SellingShipQty),
+						InvcDtl.SalesUM,
+						Part.IUM
+					) * ISNULL(Part.NetWeight, 0)
+				),
+				Part.NetWeightUOM,
+				'KG'
+			)
+
+		-- 3. Các trường hợp khác
+		ELSE
+			dbo.ANDR_ConversionFromNW(
+				InvcHead.Company,
+				InvcDtl.PartNum,
+				(
+					dbo.ANDR_ConversionFromSaleUOMToIUM(
+						InvcHead.Company,
+						InvcDtl.PartNum,
+						InvcDtl.SellingShipQty,
+						InvcDtl.SalesUM,
+						Part.IUM
+					) * ISNULL(Part.NetWeight, 0)
+				),
+				Part.NetWeightUOM,
+				'KG'
+			)
+	END AS [ShippedQtyByNetWeightKG],
 	[InvcHead].[CurrencyCode] as [CurrencyCode],
 	[InvcHead].[ExchangeRate] as [ExchangeRate],
 	[InvcDtl].[DocUnitPrice] as [DocUnitPrice],
@@ -61,14 +148,6 @@ BEGIN
 	[InvcDtl].[Discount] as [Discount],
 	(ISNULL(InvcDtl.ExtPrice,0) - ISNULL(InvcDtl.Discount,0)) as [Revenue],
 	iif(OD.ExworkUnitPrice_c=0 or OD.ExworkUnitPrice_c=InvcDtl.DocUnitPrice,0,(ISNULL(InvcDtl.ExtPrice,0) - ISNULL(InvcDtl.Discount,0))-((OD.ExworkUnitPrice_c *[InvcHead].[ExchangeRate] * InvcDtl.SellingShipQty)))  MischargeAmout,
-	--Case When [InvcDtl].[SellingShipQty] > 0  Then (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
-	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost <> 0 Then -(InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
-	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost = 0  Then -(Select Sum(PartTran.ExtCost) From PartTran With(nolock) Where PartTran.Company = InvcDtl.Company And PartTran.RMANum = InvcDtl.RMANum And PartTran.RMALine = InvcDtl.RMALine And PartTran.PartNum = InvcDtl.PartNum)  
-	--                                         Else (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0))) END as [COGS]
-	--, Case When [InvcDtl].[SellingShipQty] > 0  Then (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
-	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost <> 0 Then -(InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0)))
-	--	 When [InvcDtl].[SellingShipQty] < 0 And InvcDtl.RMANum <> 0 And InvcDtl.MtlUnitCost = 0  Then -(Select Sum(PartTran.ExtCost) From PartTran With(nolock) Where PartTran.Company = InvcDtl.Company And PartTran.RMANum = InvcDtl.RMANum And PartTran.RMALine = InvcDtl.RMALine And PartTran.PartNum = InvcDtl.PartNum)  
-	--                                         Else (InvcDtl.OurShipQty * (ISNULL(InvcDtl.MtlUnitCost,0)+ISNULL(InvcDtl.MtlBurUnitCost,0)+ISNULL(InvcDtl.LbrUnitCost,0)+ISNULL(InvcDtl.BurUnitCost,0)+ISNULL(InvcDtl.SubUnitCost,0))) END as [STDDirectCost]
 	[InvcHead].InvoiceComment AS [InvoiceComment]
 	, [Part].Sub1_c Sub1
 	, [Part].Sub2_c Sub2
